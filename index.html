@@ -2,6 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Perico Barbinaranja - Visualizador 3D</title>
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 
@@ -41,6 +42,16 @@
   button.active {
     background: #4CAF50;
     color: white;
+  }
+
+  button.ar-button {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+  }
+
+  button.ar-button:hover {
+    background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
   }
 
   #panel {
@@ -189,6 +200,92 @@
     font-size: 14px;
   }
 
+  #arModal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.9);
+    display: none;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+  }
+
+  #arModal.show {
+    display: flex;
+  }
+
+  .modal-content {
+    background: white;
+    padding: 30px;
+    border-radius: 15px;
+    max-width: 400px;
+    text-align: center;
+  }
+
+  .modal-content h2 {
+    color: #667eea;
+    margin-top: 0;
+  }
+
+  .modal-content p {
+    color: #333;
+    line-height: 1.6;
+  }
+
+  .modal-buttons {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+  }
+
+  .modal-buttons button {
+    flex: 1;
+    padding: 12px;
+    font-size: 14px;
+    margin: 0;
+  }
+
+  .btn-cancel {
+    background: #ccc;
+  }
+
+  .btn-confirm {
+    background: #667eea;
+    color: white;
+    border: none;
+  }
+
+  #arInstructions {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.85);
+    color: white;
+    padding: 15px 20px;
+    border-radius: 10px;
+    font-size: 14px;
+    text-align: center;
+    max-width: 90%;
+    backdrop-filter: blur(10px);
+    z-index: 998;
+    display: none;
+  }
+
+  .ar-badge {
+    background: rgba(255, 152, 0, 0.9);
+    color: white;
+    padding: 5px 10px;
+    border-radius: 15px;
+    font-size: 11px;
+    font-weight: bold;
+    display: inline-block;
+    margin-bottom: 5px;
+  }
+
   /* Estilos responsivos para móviles */
   @media (max-width: 768px) {
     #ui {
@@ -217,6 +314,23 @@
     #instrucciones {
       font-size: 10px;
     }
+
+    .modal-content {
+      margin: 20px;
+      padding: 20px;
+    }
+  }
+
+  /* Estilos para modo AR activo */
+  body.ar-mode #ui {
+    background: rgba(255,255,255,0.1);
+    backdrop-filter: blur(10px);
+    border-radius: 10px;
+    padding: 10px;
+  }
+
+  body.ar-mode #arInstructions {
+    display: block;
   }
 </style>
 
@@ -224,22 +338,18 @@
 
 <body>
 
-<a-scene cursor="rayOrigin: mouse">
-
-  <!-- Fondo -->
+<!-- ESCENA NORMAL (PC y Móvil por defecto) -->
+<a-scene id="normalScene" cursor="rayOrigin: mouse" webxr="optionalFeatures: hit-test, dom-overlay; overlayElement: #ui;">
   <a-assets>
     <img id="hdr" src="fondoblur.jpg">
-    
-    <!-- Sonido del periquito -->
     <audio id="sound-periquito" src="sounds/periquito.mp3" preload="auto"></audio>
   </a-assets>
+  
   <a-sky src="#hdr"></a-sky>
 
-  <!-- Luces -->
   <a-light type="ambient" intensity="0.6"></a-light>
   <a-light type="directional" intensity="1" position="2 4 2"></a-light>
 
-  <!-- Modelo del Periquito (FIJO) -->
   <a-entity
     id="modelo"
     gltf-model="models/periquito.glb"
@@ -248,15 +358,14 @@
     rotation="0 180 0">
   </a-entity>
 
-  <!-- Modelo (SUELO) -->
   <a-entity
+    id="ground"
     gltf-model="models/ground.glb"
     position="0 -1.8 0"
     scale="3 3 3"
     rotation="0 0 0">
   </a-entity>
 
-  <!-- RIG DE CÁMARA -->
   <a-entity id="cameraRig" rotation="0 0 0">
     <a-camera
       position="0 0.5 4"
@@ -265,11 +374,86 @@
       wasd-controls="enabled: true">
     </a-camera>
   </a-entity>
-
 </a-scene>
 
+<!-- Modal de confirmación AR -->
+<div id="arModal">
+  <div class="modal-content">
+    <h2>🎯 Modo Realidad Aumentada</h2>
+    <p>El modo AR te permitirá ver el modelo en tu espacio real usando la cámara de tu dispositivo.</p>
+    <ul style="text-align: left; color: #666;">
+      <li>📱 Coloca el modelo en cualquier superficie</li>
+      <li>🔄 Muévelo y rótalo libremente</li>
+      <li>📐 Escala el tamaño con gestos</li>
+    </ul>
+    <p style="font-size: 12px; color: #999;">
+      <strong>Nota:</strong> Requiere un dispositivo compatible con WebXR (Android Chrome/Edge)
+    </p>
+    <div class="modal-buttons">
+      <button class="btn-cancel" onclick="cerrarModalAR()">Cancelar</button>
+      <button class="btn-confirm" onclick="confirmarAR()">Activar AR</button>
+    </div>
+  </div>
+</div>
+
+<!-- Instrucciones AR -->
+<div id="arInstructions">
+  <div class="ar-badge">🎯 MODO AR ACTIVO</div>
+  <div>
+    <strong>Mueve tu dispositivo para encontrar una superficie</strong><br>
+    <small>Toca en la pantalla para colocar el modelo</small>
+  </div>
+</div>
+
+<!-- UI Principal -->
+<div id="ui">
+  <div id="animalTitle">🦜 Perico Barbinaranja</div>
+
+  <button onclick="togglePanel()">ℹ️ Información</button>
+  <button onclick="reproducirSonido()">🔊 Sonido</button>
+  <button class="ar-button" onclick="activarModoAR()" id="btnAR">📱 Modo AR</button>
+
+  <div id="panel" style="display: none;">
+    <h3 id="titulo"></h3>
+    <p id="descripcion"></p>
+    
+    <div class="info-buttons">
+      <button data-info="habitat" onclick="mostrarInfo('habitat')">🌍 Hábitat</button>
+      <button data-info="alimentacion" onclick="mostrarInfo('alimentacion')">🍃 Alimentación</button>
+      <button data-info="conservacion" onclick="mostrarInfo('conservacion')">🛡️ Conservación</button>
+    </div>
+    
+    <div id="infoContent" style="display: none;"></div>
+    
+    <div id="instrucciones">
+      <strong>PC:</strong> WASD: Mover | Arrastrar: Rotar | Rueda: Zoom<br>
+      <strong>Móvil:</strong> Deslizar: Rotar | Pinch: Zoom<br>
+      <strong>AR:</strong> Sin marcadores - Coloca el modelo en cualquier superficie
+    </div>
+  </div>
+
+  <div id="audioPanel">
+    <h4 id="audioTitle">🔊 Audio</h4>
+    
+    <div class="audio-controls">
+      <button onclick="rebobinarAudio()">⏪ -5s</button>
+      <button id="playPauseBtn" onclick="togglePlayPause()">⏸️ Pausar</button>
+      <button onclick="ocultarPanelAudio()">❌ Cerrar</button>
+    </div>
+    
+    <div id="progressContainer" onclick="clickProgress(event)">
+      <div id="progressBar"></div>
+    </div>
+    
+    <div id="timeDisplay">0:00 / 0:00</div>
+  </div>
+</div>
+
 <script>
-  // Control de rotación con mouse y touch
+  let modoAR = false;
+  let modeloAR = null;
+
+  // Control de rotación con mouse y touch (MODO NORMAL)
   window.addEventListener('DOMContentLoaded', () => {
     const rig = document.querySelector('#cameraRig');
 
@@ -284,7 +468,8 @@
 
     // Eventos de mouse
     window.addEventListener('mousedown', e => {
-      if (e.target.closest('#ui')) return; // Ignorar clics en UI
+      if (modoAR) return;
+      if (e.target.closest('#ui')) return;
       dragging = true;
       lastX = e.clientX;
     });
@@ -292,6 +477,7 @@
     window.addEventListener('mouseup', () => dragging = false);
 
     window.addEventListener('mousemove', e => {
+      if (modoAR) return;
       if (!dragging) return;
 
       const delta = e.clientX - lastX;
@@ -303,7 +489,8 @@
 
     // Eventos táctiles para móviles
     window.addEventListener('touchstart', e => {
-      if (e.target.closest('#ui')) return; // Ignorar toques en UI
+      if (modoAR) return;
+      if (e.target.closest('#ui')) return;
       dragging = true;
       lastX = e.touches[0].clientX;
     }, { passive: true });
@@ -311,6 +498,7 @@
     window.addEventListener('touchend', () => dragging = false);
 
     window.addEventListener('touchmove', e => {
+      if (modoAR) return;
       if (!dragging) return;
       
       const delta = e.touches[0].clientX - lastX;
@@ -323,7 +511,7 @@
 </script>
 
 <script>
-  // Control de zoom con rueda del mouse y pinch en móviles
+  // Control de zoom con rueda del mouse y pinch en móviles (MODO NORMAL)
   window.addEventListener('DOMContentLoaded', () => {
     const camera = document.querySelector('a-camera');
     let zoom = 4;
@@ -331,7 +519,8 @@
 
     // Zoom con rueda del mouse
     window.addEventListener('wheel', e => {
-      if (e.target.closest('#ui')) return; // Ignorar scroll en UI
+      if (modoAR) return;
+      if (e.target.closest('#ui')) return;
       zoom += e.deltaY * 0.01;
       zoom = Math.min(Math.max(zoom, 2), 12);
 
@@ -342,6 +531,7 @@
     let lastDistance = 0;
     
     window.addEventListener('touchstart', e => {
+      if (modoAR) return;
       if (e.touches.length === 2) {
         const touch1 = e.touches[0];
         const touch2 = e.touches[1];
@@ -353,6 +543,7 @@
     }, { passive: true });
 
     window.addEventListener('touchmove', e => {
+      if (modoAR) return;
       if (e.touches.length === 2) {
         e.preventDefault();
         const touch1 = e.touches[0];
@@ -390,7 +581,6 @@
     document.getElementById('titulo').textContent = animal.nombre;
     document.getElementById('descripcion').textContent = animal.descripcion;
     
-    // Si había info adicional visible, actualizarla
     if (infoActiva) {
       mostrarInfo(infoActiva);
     } else {
@@ -406,7 +596,6 @@
     let contenido = '';
     
     if (infoActiva === tipo) {
-      // Si se clickea el mismo botón, ocultar
       infoActiva = null;
       infoContent.style.display = 'none';
       actualizarBotonesInfo();
@@ -456,6 +645,99 @@
       panel.style.display = 'none';
     }
   }
+
+  // FUNCIONES DE MODO AR CON WEBXR
+  function activarModoAR() {
+    // Verificar compatibilidad con WebXR
+    if (navigator.xr) {
+      navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
+        if (supported) {
+          document.getElementById('arModal').classList.add('show');
+        } else {
+          alert('❌ Tu dispositivo no soporta WebXR AR.\n\nRequieres:\n- Android con Chrome o Edge\n- Dispositivo compatible con ARCore');
+        }
+      }).catch(() => {
+        alert('❌ Tu dispositivo no soporta WebXR AR.\n\nRequieres:\n- Android con Chrome o Edge\n- Dispositivo compatible con ARCore');
+      });
+    } else {
+      alert('❌ Tu navegador no soporta WebXR.\n\nPrueba con:\n- Chrome en Android\n- Edge en Android');
+    }
+  }
+
+  function cerrarModalAR() {
+    document.getElementById('arModal').classList.remove('show');
+  }
+
+  function confirmarAR() {
+    cerrarModalAR();
+    iniciarWebXR();
+  }
+
+  async function iniciarWebXR() {
+    const scene = document.querySelector('a-scene');
+    
+    // Ocultar elementos del modo normal
+    const sky = document.querySelector('a-sky');
+    const ground = document.querySelector('#ground');
+    if (sky) sky.setAttribute('visible', false);
+    if (ground) ground.setAttribute('visible', false);
+    
+    // Activar modo AR
+    modoAR = true;
+    document.body.classList.add('ar-mode');
+    
+    // Configurar el modelo para AR
+    const modelo = document.querySelector('#modelo');
+    modelo.setAttribute('scale', '0.5 0.5 0.5');
+    modelo.setAttribute('position', '0 0 -2');
+    
+    try {
+      // Solicitar sesión AR
+      await scene.enterAR();
+      
+      console.log('✅ Sesión AR iniciada');
+      
+      // Mostrar instrucciones
+      document.getElementById('arInstructions').style.display = 'block';
+      
+    } catch (error) {
+      console.error('Error al iniciar AR:', error);
+      alert('No se pudo iniciar el modo AR. Asegúrate de:\n- Estar usando Chrome en Android\n- Tener permisos de cámara\n- Estar en una página HTTPS');
+      salirModoAR();
+    }
+  }
+
+  function salirModoAR() {
+    modoAR = false;
+    document.body.classList.remove('ar-mode');
+    
+    // Restaurar elementos
+    const sky = document.querySelector('a-sky');
+    const ground = document.querySelector('#ground');
+    if (sky) sky.setAttribute('visible', true);
+    if (ground) ground.setAttribute('visible', true);
+    
+    // Restaurar modelo
+    const modelo = document.querySelector('#modelo');
+    modelo.setAttribute('scale', '5 5 5');
+    modelo.setAttribute('position', '0 0 0');
+    
+    // Ocultar instrucciones
+    document.getElementById('arInstructions').style.display = 'none';
+    
+    // Salir de la sesión AR
+    const scene = document.querySelector('a-scene');
+    if (scene.is('ar-mode')) {
+      scene.exitAR();
+    }
+  }
+
+  // Detectar cuando sale del modo AR
+  document.querySelector('a-scene').addEventListener('exit-vr', () => {
+    if (modoAR) {
+      salirModoAR();
+    }
+  });
 
   // Función para reproducir sonido
   let audioActual = null;
@@ -533,7 +815,6 @@
       const duration = formatTime(audioActual.duration || 0);
       document.getElementById('timeDisplay').textContent = `${currentTime} / ${duration}`;
       
-      // Si terminó el audio
       if (audioActual.currentTime >= audioActual.duration) {
         isPlaying = false;
         actualizarBotonPlay();
@@ -570,47 +851,6 @@
     mostrarAnimal();
   });
 </script>
-
-<div id="ui">
-  <div id="animalTitle">Perico Barbinaranja</div>
-
-  <button onclick="togglePanel()">ℹ️ Información</button>
-  <button onclick="reproducirSonido()">🔊 Sonido</button>
-
-  <div id="panel" style="display: none;">
-    <h3 id="titulo"></h3>
-    <p id="descripcion"></p>
-    
-    <div class="info-buttons">
-      <button data-info="habitat" onclick="mostrarInfo('habitat')">🌍 Hábitat</button>
-      <button data-info="alimentacion" onclick="mostrarInfo('alimentacion')">🍃 Alimentación</button>
-      <button data-info="conservacion" onclick="mostrarInfo('conservacion')">🛡️ Conservación</button>
-    </div>
-    
-    <div id="infoContent" style="display: none;"></div>
-    
-    <div id="instrucciones">
-      <strong>PC:</strong> WASD: Mover | Arrastrar: Rotar | Rueda: Zoom<br>
-      <strong>Móvil:</strong> Deslizar: Rotar | Pinch: Zoom
-    </div>
-  </div>
-
-  <div id="audioPanel">
-    <h4 id="audioTitle">🔊 Audio</h4>
-    
-    <div class="audio-controls">
-      <button onclick="rebobinarAudio()">⏪ -5s</button>
-      <button id="playPauseBtn" onclick="togglePlayPause()">⏸️ Pausar</button>
-      <button onclick="ocultarPanelAudio()">❌ Cerrar</button>
-    </div>
-    
-    <div id="progressContainer" onclick="clickProgress(event)">
-      <div id="progressBar"></div>
-    </div>
-    
-    <div id="timeDisplay">0:00 / 0:00</div>
-  </div>
-</div>
 
 </body>
 </html>
