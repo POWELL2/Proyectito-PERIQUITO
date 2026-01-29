@@ -288,31 +288,24 @@
     margin-bottom: 5px;
   }
 
-  #arVideoContainer {
+  #surfaceIndicator {
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: black;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 100px;
+    height: 100px;
+    border: 3px dashed #4CAF50;
+    border-radius: 50%;
+    background: rgba(76, 175, 80, 0.2);
     display: none;
-    z-index: 100;
+    z-index: 997;
+    animation: pulse 1.5s infinite;
   }
 
-  #arVideoContainer video {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  #arCanvas {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
-    z-index: 101;
+  @keyframes pulse {
+    0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.8; }
+    50% { transform: translate(-50%, -50%) scale(1.1); opacity: 0.5; }
   }
 
   /* Estilos responsivos para móviles */
@@ -361,32 +354,17 @@
   body.ar-mode #arInstructions {
     display: block;
   }
-
-  body.ar-mode #normalScene {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    z-index: 102;
-  }
-
-  body.ar-mode #arVideoContainer {
-    display: block;
-  }
 </style>
 
 </head>
 
 <body>
 
-<!-- Contenedor de video AR (para PC) -->
-<div id="arVideoContainer">
-  <video id="arVideo" autoplay playsinline></video>
-</div>
+<!-- Indicador de superficie -->
+<div id="surfaceIndicator"></div>
 
 <!-- ESCENA NORMAL (PC y Móvil por defecto) -->
-<a-scene id="normalScene" cursor="rayOrigin: mouse" webxr="optionalFeatures: hit-test, dom-overlay; overlayElement: #ui;">
+<a-scene id="normalScene" webxr="optionalFeatures: hit-test, dom-overlay; overlayElement: #ui;">
   <a-assets>
     <img id="hdr" src="fondoblur.jpg">
     <audio id="sound-periquito" src="sounds/periquito.mp3" preload="auto"></audio>
@@ -416,7 +394,6 @@
   <a-entity id="cameraRig" rotation="0 0 0">
     <a-camera
       position="0 0.5 4"
-      look-at="#modelo"
       look-controls="enabled: false"
       wasd-controls="enabled: true">
     </a-camera>
@@ -427,16 +404,14 @@
 <div id="arModal">
   <div class="modal-content">
     <h2>🎯 Modo Realidad Aumentada</h2>
-    <p>El modo AR te permitirá ver el modelo usando tu cámara (PC o móvil).</p>
+    <p>El modo AR te permitirá ver el modelo en tu entorno real.</p>
     <ul style="text-align: left; color: #666;">
-      <li>✅ Sin necesidad de marcadores</li>
-      <li>📷 Funciona con webcam (PC) o cámara (móvil)</li>
-      <li>🔄 Muévelo y rótalo libremente</li>
-      <li>📐 Ajusta el tamaño con controles</li>
+      <li>📱 Apunta tu cámara al suelo</li>
+      <li>👆 Toca donde quieras colocar el modelo</li>
+      <li>🔄 Mueve tu cámara para verlo desde todos los ángulos</li>
     </ul>
     <p style="font-size: 12px; color: #999;">
-      <strong>PC:</strong> Chrome/Edge con webcam<br>
-      <strong>Móvil:</strong> Android Chrome/Edge con ARCore
+      <strong>Requisitos:</strong> Android con ARCore (Chrome/Edge)
     </p>
     <div class="modal-buttons">
       <button class="btn-cancel" onclick="cerrarModalAR()">Cancelar</button>
@@ -449,8 +424,8 @@
 <div id="arInstructions">
   <div class="ar-badge">🎯 MODO AR ACTIVO</div>
   <div id="arInstructionText">
-    <strong>Modo AR activado</strong><br>
-    <small>El modelo aparece frente a ti. Usa los controles para ajustarlo.</small>
+    <strong id="arStatusText">Buscando superficies...</strong><br>
+    <small id="arHelpText">Apunta tu cámara al suelo y muévela lentamente</small>
   </div>
   <button onclick="salirModoAR()" style="margin-top: 10px; padding: 8px 15px; background: rgba(255,255,255,0.9); border: none; border-radius: 5px; cursor: pointer;">
     🔙 Salir de AR
@@ -480,7 +455,7 @@
     <div id="instrucciones">
       <strong>PC:</strong> WASD: Mover | Arrastrar: Rotar | Rueda: Zoom<br>
       <strong>Móvil:</strong> Deslizar: Rotar | Pinch: Zoom<br>
-      <strong>AR:</strong> Ver el modelo con tu cámara (PC/Móvil)
+      <strong>AR:</strong> Detección de superficies y colocación táctil
     </div>
   </div>
 
@@ -503,8 +478,13 @@
 
 <script>
   let modoAR = false;
-  let arStream = null;
+  let modeloColocado = false;
   let esMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+  // Variables para AR Hit-Test
+  let xrHitTestSource = null;
+  let viewerSpace = null;
+  let refSpace = null;
 
   // Control de rotación con mouse y touch (MODO NORMAL)
   window.addEventListener('DOMContentLoaded', () => {
@@ -699,7 +679,7 @@
     }
   }
 
-  // FUNCIONES DE MODO AR
+  // FUNCIONES DE MODO AR (AGREGADAS)
   function activarModoAR() {
     document.getElementById('arModal').classList.add('show');
   }
@@ -711,138 +691,200 @@
   async function confirmarAR() {
     cerrarModalAR();
     
-    if (esMobile && navigator.xr) {
-      // Intentar WebXR nativo en móvil
-      try {
-        const supported = await navigator.xr.isSessionSupported('immersive-ar');
-        if (supported) {
-          iniciarWebXRNativo();
-          return;
-        }
-      } catch (e) {
-        console.log('WebXR no disponible, usando cámara estándar');
+    if (!esMobile) {
+      alert('⚠️ El modo AR con detección de superficies solo está disponible en dispositivos móviles Android con ARCore.');
+      return;
+    }
+
+    try {
+      const scene = document.querySelector('a-scene');
+      
+      if (!navigator.xr) {
+        alert('❌ Tu dispositivo no soporta WebXR.\n\nNecesitas:\n- Android con ARCore\n- Chrome o Edge actualizado');
+        return;
       }
-    }
-    
-    // Fallback: Usar cámara estándar (PC y móviles sin WebXR)
-    iniciarARConCamara();
-  }
 
-  async function iniciarWebXRNativo() {
-    const scene = document.querySelector('a-scene');
-    
-    // Ocultar elementos del modo normal
-    const sky = document.querySelector('a-sky');
-    const ground = document.querySelector('#ground');
-    if (sky) sky.setAttribute('visible', false);
-    if (ground) ground.setAttribute('visible', false);
-    
-    // Activar modo AR
-    modoAR = true;
-    document.body.classList.add('ar-mode');
-    
-    // Configurar el modelo para AR
-    const modelo = document.querySelector('#modelo');
-    modelo.setAttribute('scale', '0.5 0.5 0.5');
-    modelo.setAttribute('position', '0 0 -2');
-    
-    try {
-      await scene.enterAR();
-      console.log('✅ WebXR AR iniciado');
-      document.getElementById('arInstructions').style.display = 'block';
-    } catch (error) {
-      console.error('Error WebXR:', error);
-      salirModoAR();
-      iniciarARConCamara();
-    }
-  }
+      const supported = await navigator.xr.isSessionSupported('immersive-ar');
+      
+      if (!supported) {
+        alert('❌ AR no disponible.\n\nRequisitos:\n- Android con Google Play Services para AR\n- Chrome/Edge actualizado');
+        return;
+      }
 
-  async function iniciarARConCamara() {
-    try {
-      // Solicitar acceso a la cámara
-      arStream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: esMobile ? 'environment' : 'user',
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        }
-      });
-      
-      // Mostrar video de la cámara
-      const video = document.getElementById('arVideo');
-      video.srcObject = arStream;
-      
-      // Activar modo AR
       modoAR = true;
+      modeloColocado = false;
       document.body.classList.add('ar-mode');
       
-      // Ocultar fondo y suelo
       const sky = document.querySelector('a-sky');
       const ground = document.querySelector('#ground');
       if (sky) sky.setAttribute('visible', false);
       if (ground) ground.setAttribute('visible', false);
       
-      // Configurar modelo para AR con cámara
       const modelo = document.querySelector('#modelo');
-      modelo.setAttribute('scale', '2 2 2');
-      modelo.setAttribute('position', '0 0 -3');
+      modelo.setAttribute('visible', false);
+      modelo.setAttribute('scale', '1.5 1.5 1.5');
       
-      // Hacer la escena transparente
-      const scene = document.querySelector('a-scene');
-      scene.setAttribute('background', 'transparent: true');
-      
-      console.log('✅ AR con cámara iniciado');
       document.getElementById('arInstructions').style.display = 'block';
-      document.getElementById('arInstructionText').innerHTML = 
-        '<strong>Cámara AR activada</strong><br><small>El modelo aparece frente a ti. Mueve tu dispositivo para verlo desde diferentes ángulos.</small>';
+      
+      await scene.enterAR();
+      
+      console.log('✅ Modo AR activado');
       
     } catch (error) {
-      console.error('Error al acceder a la cámara:', error);
-      alert('❌ No se pudo acceder a la cámara.\n\nAsegúrate de:\n- Dar permisos de cámara\n- Estar en HTTPS (o localhost)');
+      console.error('Error al activar AR:', error);
+      alert('❌ Error al iniciar AR:\n' + error.message);
       salirModoAR();
     }
   }
 
   function salirModoAR() {
-    modoAR = false;
-    document.body.classList.remove('ar-mode');
+    const scene = document.querySelector('a-scene');
     
-    // Detener stream de cámara
-    if (arStream) {
-      arStream.getTracks().forEach(track => track.stop());
-      arStream = null;
+    if (scene.is('ar-mode')) {
+      scene.exitAR();
     }
     
-    // Restaurar elementos
+    modoAR = false;
+    modeloColocado = false;
+    document.body.classList.remove('ar-mode');
+    
     const sky = document.querySelector('a-sky');
     const ground = document.querySelector('#ground');
     if (sky) sky.setAttribute('visible', true);
     if (ground) ground.setAttribute('visible', true);
     
-    // Restaurar modelo
     const modelo = document.querySelector('#modelo');
     modelo.setAttribute('scale', '5 5 5');
     modelo.setAttribute('position', '0 0 0');
+    modelo.setAttribute('visible', true);
     
-    // Restaurar escena
-    const scene = document.querySelector('a-scene');
-    scene.setAttribute('background', '');
-    
-    // Ocultar instrucciones
     document.getElementById('arInstructions').style.display = 'none';
+    document.getElementById('surfaceIndicator').style.display = 'none';
     
-    // Salir de WebXR si está activo
-    if (scene.is('ar-mode')) {
-      scene.exitAR();
+    // Limpiar hit-test
+    if (xrHitTestSource) {
+      xrHitTestSource.cancel();
+      xrHitTestSource = null;
     }
+    viewerSpace = null;
+    refSpace = null;
+    
+    console.log('✅ Salido del modo AR');
   }
 
-  // Detectar cuando sale del modo AR
+  // Inicializar AR Hit-Test cuando entra en AR
+  document.querySelector('a-scene').addEventListener('enter-vr', async () => {
+    const scene = document.querySelector('a-scene');
+    if (!scene.is('ar-mode')) return;
+    
+    const session = scene.renderer.xr.getSession();
+    
+    try {
+      viewerSpace = await session.requestReferenceSpace('viewer');
+      xrHitTestSource = await session.requestHitTestSource({ space: viewerSpace });
+      refSpace = await session.requestReferenceSpace('local');
+      console.log('✅ Hit-test inicializado');
+      
+      // Iniciar loop de detección
+      iniciarDeteccionSuperficies(scene);
+    } catch (err) {
+      console.error('Error hit-test:', err);
+    }
+  });
+
+  // Limpiar al salir de AR
   document.querySelector('a-scene').addEventListener('exit-vr', () => {
     if (modoAR) {
       salirModoAR();
     }
   });
+
+  // Función para detectar superficies continuamente
+  function iniciarDeteccionSuperficies(scene) {
+    const renderer = scene.renderer;
+    
+    function detectar() {
+      if (!scene.is('ar-mode')) return;
+      if (!xrHitTestSource) return;
+      if (modeloColocado) return;
+
+      const frame = renderer.xr.getFrame();
+      if (!frame) {
+        requestAnimationFrame(detectar);
+        return;
+      }
+
+      try {
+        const hitTestResults = frame.getHitTestResults(xrHitTestSource);
+
+        if (hitTestResults.length > 0) {
+          const hit = hitTestResults[0];
+          const pose = hit.getPose(refSpace);
+
+          if (pose) {
+            document.getElementById('surfaceIndicator').style.display = 'block';
+            document.getElementById('arStatusText').textContent = '✅ Superficie detectada';
+            document.getElementById('arHelpText').textContent = 'Toca la pantalla para colocar el modelo';
+            
+            // Guardar la pose
+            scene.setAttribute('ar-hit-pose', JSON.stringify(Array.from(pose.transform.matrix)));
+          }
+        } else {
+          document.getElementById('surfaceIndicator').style.display = 'none';
+          document.getElementById('arStatusText').textContent = 'Buscando superficies...';
+          document.getElementById('arHelpText').textContent = 'Apunta tu cámara al suelo y muévela lentamente';
+        }
+      } catch (err) {
+        console.error('Error en detección:', err);
+      }
+
+      requestAnimationFrame(detectar);
+    }
+
+    detectar();
+  }
+
+  // Detectar toque para colocar modelo
+  window.addEventListener('touchend', (e) => {
+    if (!modoAR) return;
+    if (modeloColocado) return;
+    if (e.target.closest('#ui')) return;
+    
+    const scene = document.querySelector('a-scene');
+    const poseData = scene.getAttribute('ar-hit-pose');
+    
+    if (poseData) {
+      try {
+        const poseMatrix = JSON.parse(poseData);
+        colocarModelo(poseMatrix);
+      } catch (err) {
+        console.error('Error al parsear pose:', err);
+      }
+    }
+  });
+
+  function colocarModelo(matrix) {
+    const modelo = document.querySelector('#modelo');
+    
+    const position = new THREE.Vector3();
+    const quaternion = new THREE.Quaternion();
+    const scale = new THREE.Vector3();
+    
+    const mat4 = new THREE.Matrix4();
+    mat4.fromArray(matrix);
+    mat4.decompose(position, quaternion, scale);
+    
+    modelo.setAttribute('position', position);
+    modelo.setAttribute('visible', true);
+    
+    modeloColocado = true;
+    
+    document.getElementById('surfaceIndicator').style.display = 'none';
+    document.getElementById('arStatusText').textContent = '✅ Modelo colocado';
+    document.getElementById('arHelpText').textContent = 'Mueve tu cámara para verlo desde diferentes ángulos';
+    
+    console.log('✅ Modelo colocado en:', position);
+  }
 
   // Función para reproducir sonido
   let audioActual = null;
