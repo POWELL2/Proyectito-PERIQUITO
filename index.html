@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Perico Barbinaranja - Visualizador 3D</title>
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
-  <!-- WebXR Polyfill para mejorar compatibilidad -->
   <script src="https://cdn.jsdelivr.net/npm/webxr-polyfill@latest/build/webxr-polyfill.min.js"></script>
 
 <style>
@@ -308,7 +307,6 @@
     50% { transform: translate(-50%, -50%) scale(1.1); opacity: 0.5; }
   }
 
-  /* Estilos responsivos para móviles */
   @media (max-width: 768px) {
     #ui {
       max-width: calc(100% - 20px);
@@ -343,7 +341,6 @@
     }
   }
 
-  /* Estilos para modo AR activo */
   body.ar-mode #ui {
     background: rgba(255,255,255,0.1);
     border-radius: 10px;
@@ -362,8 +359,12 @@
 <!-- Indicador de superficie -->
 <div id="surfaceIndicator"></div>
 
-<!-- ESCENA NORMAL (PC y Móvil por defecto) -->
-<a-scene id="normalScene" webxr="optionalFeatures: hit-test, dom-overlay; overlayElement: #ui;">
+<!-- ESCENA -->
+<a-scene 
+  id="normalScene" 
+  webxr="requiredFeatures: hit-test,local-floor; optionalFeatures: dom-overlay,unbounded; overlayElement: #ui;"
+  renderer="colorManagement: true; physicallyCorrectLights: true;">
+  
   <a-assets>
     <img id="hdr" src="fondoblur.jpg">
     <audio id="sound-periquito" src="sounds/periquito.mp3" preload="auto"></audio>
@@ -374,6 +375,16 @@
   <a-light type="ambient" intensity="0.6"></a-light>
   <a-light type="directional" intensity="1" position="2 4 2"></a-light>
 
+  <!-- Reticle para AR (invisible en modo normal) -->
+  <a-entity
+    id="reticle"
+    geometry="primitive: ring; radiusInner: 0.08; radiusOuter: 0.1"
+    material="color: #4CAF50; shader: flat; opacity: 0.8"
+    rotation="-90 0 0"
+    visible="false">
+  </a-entity>
+
+  <!-- Modelo del perico -->
   <a-entity
     id="modelo"
     gltf-model="models/periquito.glb"
@@ -382,6 +393,7 @@
     rotation="0 180 0">
   </a-entity>
 
+  <!-- Suelo (solo visible en modo normal) -->
   <a-entity
     id="ground"
     gltf-model="models/ground.glb"
@@ -390,6 +402,7 @@
     rotation="0 0 0">
   </a-entity>
 
+  <!-- Cámara para modo normal -->
   <a-entity id="cameraRig" rotation="0 0 0">
     <a-camera
       position="0 0.5 4"
@@ -476,18 +489,21 @@
 </div>
 
 <script>
+  // VARIABLES GLOBALES
   let modoAR = false;
   let modeloColocado = false;
   let esMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-
-  // Variables para AR Hit-Test
   let xrHitTestSource = null;
-  let viewerSpace = null;
-  let refSpace = null;
+  let hitTestSourceRequested = false;
+  let reticleVisible = false;
+  let lastHitPose = null;
 
-  // Control de rotación con mouse y touch (MODO NORMAL)
+  // ========================================
+  // CONTROL DE ROTACIÓN Y ZOOM (MODO NORMAL)
+  // ========================================
   window.addEventListener('DOMContentLoaded', () => {
     const rig = document.querySelector('#cameraRig');
+    const camera = document.querySelector('a-camera');
 
     if (!rig) {
       console.error('cameraRig no encontrado');
@@ -497,8 +513,10 @@
     let dragging = false;
     let lastX = 0;
     let rotationY = 0;
+    let zoom = 4;
+    const cameraY = 0.5;
 
-    // Eventos de mouse
+    // ===== EVENTOS DE MOUSE =====
     window.addEventListener('mousedown', e => {
       if (modoAR) return;
       if (e.target.closest('#ui')) return;
@@ -519,52 +537,24 @@
       rig.setAttribute('rotation', `0 ${rotationY} 0`);
     });
 
-    // Eventos táctiles para móviles
-    window.addEventListener('touchstart', e => {
-      if (modoAR) return;
-      if (e.target.closest('#ui')) return;
-      dragging = true;
-      lastX = e.touches[0].clientX;
-    }, { passive: true });
-
-    window.addEventListener('touchend', () => dragging = false);
-
-    window.addEventListener('touchmove', e => {
-      if (modoAR) return;
-      if (!dragging) return;
-      
-      const delta = e.touches[0].clientX - lastX;
-      lastX = e.touches[0].clientX;
-
-      rotationY += delta * 0.3;
-      rig.setAttribute('rotation', `0 ${rotationY} 0`);
-    }, { passive: true });
-  });
-</script>
-
-<script>
-  // Control de zoom con rueda del mouse y pinch en móviles (MODO NORMAL)
-  window.addEventListener('DOMContentLoaded', () => {
-    const camera = document.querySelector('a-camera');
-    let zoom = 4;
-    const cameraY = 0.5;
-
-    // Zoom con rueda del mouse
+    // ===== ZOOM CON RUEDA DEL MOUSE =====
     window.addEventListener('wheel', e => {
       if (modoAR) return;
       if (e.target.closest('#ui')) return;
       zoom += e.deltaY * 0.01;
       zoom = Math.min(Math.max(zoom, 2), 12);
-
       camera.setAttribute('position', `0 ${cameraY} ${zoom}`);
     });
 
-    // Zoom con pinch en móviles
-    let lastDistance = 0;
-    
+    // ===== EVENTOS TÁCTILES =====
     window.addEventListener('touchstart', e => {
       if (modoAR) return;
-      if (e.touches.length === 2) {
+      if (e.target.closest('#ui')) return;
+      
+      if (e.touches.length === 1) {
+        dragging = true;
+        lastX = e.touches[0].clientX;
+      } else if (e.touches.length === 2) {
         const touch1 = e.touches[0];
         const touch2 = e.touches[1];
         lastDistance = Math.hypot(
@@ -574,9 +564,19 @@
       }
     }, { passive: true });
 
+    window.addEventListener('touchend', () => dragging = false);
+
+    let lastDistance = 0;
+
     window.addEventListener('touchmove', e => {
       if (modoAR) return;
-      if (e.touches.length === 2) {
+      
+      if (e.touches.length === 1 && dragging) {
+        const delta = e.touches[0].clientX - lastX;
+        lastX = e.touches[0].clientX;
+        rotationY += delta * 0.3;
+        rig.setAttribute('rotation', `0 ${rotationY} 0`);
+      } else if (e.touches.length === 2) {
         e.preventDefault();
         const touch1 = e.touches[0];
         const touch2 = e.touches[1];
@@ -588,16 +588,15 @@
         const delta = lastDistance - distance;
         zoom += delta * 0.01;
         zoom = Math.min(Math.max(zoom, 2), 12);
-
         camera.setAttribute('position', `0 ${cameraY} ${zoom}`);
         lastDistance = distance;
       }
     }, { passive: false });
   });
-</script>
 
-<script>
-  // Información del Perico Barbinaranja
+  // ========================================
+  // INFORMACIÓN DEL ANIMAL
+  // ========================================
   const animal = {
     nombre: "Perico Barbinaranja",
     descripcion: "Es un ave sociable que vive en bandadas y habita en diversos entornos, desde bosques y sabanas hasta parques urbanos. Se alimenta en ramas expuestas y anida en cavidades, ya sean recuperadas o excavadas por él mismo.",
@@ -608,7 +607,6 @@
 
   let infoActiva = null;
 
-  // Función para mostrar información del animal
   function mostrarAnimal() {
     document.getElementById('titulo').textContent = animal.nombre;
     document.getElementById('descripcion').textContent = animal.descripcion;
@@ -620,7 +618,6 @@
     }
   }
 
-  // Función para mostrar información adicional
   function mostrarInfo(tipo) {
     const infoContent = document.getElementById('infoContent');
     
@@ -655,7 +652,6 @@
     actualizarBotonesInfo();
   }
 
-  // Actualizar botones de información
   function actualizarBotonesInfo() {
     const botonesInfo = document.querySelectorAll('.info-buttons button');
     botonesInfo.forEach(btn => {
@@ -668,7 +664,6 @@
     });
   }
 
-  // Función para mostrar/ocultar panel
   function togglePanel() {
     const panel = document.getElementById('panel');
     if (panel.style.display === 'none') {
@@ -678,7 +673,9 @@
     }
   }
 
-  // FUNCIONES DE MODO AR (AGREGADAS)
+  // ========================================
+  // MODO AR - FUNCIONES PRINCIPALES
+  // ========================================
   function activarModoAR() {
     document.getElementById('arModal').classList.add('show');
   }
@@ -696,8 +693,6 @@
     }
 
     try {
-      const scene = document.querySelector('a-scene');
-      
       if (!navigator.xr) {
         alert('❌ Tu dispositivo no soporta WebXR.\n\nNecesitas:\n- Android con ARCore\n- Chrome o Edge actualizado');
         return;
@@ -712,19 +707,25 @@
 
       modoAR = true;
       modeloColocado = false;
+      hitTestSourceRequested = false;
       document.body.classList.add('ar-mode');
       
+      // Ocultar elementos de modo normal
       const sky = document.querySelector('a-sky');
       const ground = document.querySelector('#ground');
       if (sky) sky.setAttribute('visible', false);
       if (ground) ground.setAttribute('visible', false);
       
+      // Ocultar modelo hasta que se coloque
       const modelo = document.querySelector('#modelo');
       modelo.setAttribute('visible', false);
       modelo.setAttribute('scale', '1.5 1.5 1.5');
       
+      // Mostrar instrucciones AR
       document.getElementById('arInstructions').style.display = 'block';
       
+      // Entrar en modo AR
+      const scene = document.querySelector('a-scene');
       await scene.enterAR();
       
       console.log('✅ Modo AR activado');
@@ -745,18 +746,26 @@
     
     modoAR = false;
     modeloColocado = false;
+    hitTestSourceRequested = false;
+    reticleVisible = false;
     document.body.classList.remove('ar-mode');
     
+    // Restaurar visibilidad
     const sky = document.querySelector('a-sky');
     const ground = document.querySelector('#ground');
+    const reticle = document.querySelector('#reticle');
+    
     if (sky) sky.setAttribute('visible', true);
     if (ground) ground.setAttribute('visible', true);
+    if (reticle) reticle.setAttribute('visible', false);
     
+    // Restaurar modelo
     const modelo = document.querySelector('#modelo');
     modelo.setAttribute('scale', '5 5 5');
     modelo.setAttribute('position', '0 0 0');
     modelo.setAttribute('visible', true);
     
+    // Ocultar UI de AR
     document.getElementById('arInstructions').style.display = 'none';
     document.getElementById('surfaceIndicator').style.display = 'none';
     
@@ -765,127 +774,150 @@
       xrHitTestSource.cancel();
       xrHitTestSource = null;
     }
-    viewerSpace = null;
-    refSpace = null;
     
     console.log('✅ Salido del modo AR');
   }
 
-  // Inicializar AR Hit-Test cuando entra en AR
-  document.querySelector('a-scene').addEventListener('enter-vr', async () => {
-    const scene = document.querySelector('a-scene');
+  // ========================================
+  // AR HIT-TEST - DETECCIÓN DE SUPERFICIES
+  // ========================================
+  const scene = document.querySelector('a-scene');
+  
+  scene.addEventListener('enter-vr', async () => {
     if (!scene.is('ar-mode')) return;
     
-    const session = scene.renderer.xr.getSession();
+    console.log('🎯 Entrando en sesión AR...');
     
-    try {
-      viewerSpace = await session.requestReferenceSpace('viewer');
-      xrHitTestSource = await session.requestHitTestSource({ space: viewerSpace });
-      refSpace = await session.requestReferenceSpace('local');
-      console.log('✅ Hit-test inicializado');
-      
-      // Iniciar loop de detección
-      iniciarDeteccionSuperficies(scene);
-    } catch (err) {
-      console.error('Error hit-test:', err);
+    const renderer = scene.renderer;
+    const session = renderer.xr.getSession();
+    
+    if (!session) {
+      console.error('❌ No hay sesión XR');
+      return;
     }
+
+    // Iniciar el loop de hit-test
+    renderer.xr.addEventListener('sessionstart', () => {
+      session.requestReferenceSpace('viewer').then((refSpace) => {
+        session.requestHitTestSource({ space: refSpace }).then((hitTestSource) => {
+          xrHitTestSource = hitTestSource;
+          hitTestSourceRequested = true;
+          console.log('✅ Hit-test source inicializado');
+        }).catch(err => {
+          console.error('❌ Error al crear hit-test source:', err);
+        });
+      });
+    });
+
+    // Loop de renderizado para detección continua
+    function onXRFrame(time, frame) {
+      if (!modoAR) return;
+      if (!frame) return;
+      if (modeloColocado) return;
+
+      const session = frame.session;
+      
+      if (xrHitTestSource && hitTestSourceRequested) {
+        const hitTestResults = frame.getHitTestResults(xrHitTestSource);
+        
+        if (hitTestResults.length > 0) {
+          const hit = hitTestResults[0];
+          const pose = hit.getPose(renderer.xr.getReferenceSpace());
+          
+          if (pose) {
+            const reticle = document.querySelector('#reticle');
+            
+            // Actualizar posición del reticle
+            reticle.setAttribute('position', {
+              x: pose.transform.position.x,
+              y: pose.transform.position.y,
+              z: pose.transform.position.z
+            });
+            
+            if (!reticleVisible) {
+              reticle.setAttribute('visible', true);
+              reticleVisible = true;
+            }
+            
+            // Guardar última pose válida
+            lastHitPose = pose;
+            
+            // Actualizar UI
+            document.getElementById('surfaceIndicator').style.display = 'block';
+            document.getElementById('arStatusText').textContent = '✅ Superficie detectada';
+            document.getElementById('arHelpText').textContent = 'Toca la pantalla para colocar el modelo';
+          }
+        } else {
+          // No hay superficies detectadas
+          const reticle = document.querySelector('#reticle');
+          if (reticleVisible) {
+            reticle.setAttribute('visible', false);
+            reticleVisible = false;
+          }
+          
+          document.getElementById('surfaceIndicator').style.display = 'none';
+          document.getElementById('arStatusText').textContent = 'Buscando superficies...';
+          document.getElementById('arHelpText').textContent = 'Apunta tu cámara al suelo y muévela lentamente';
+        }
+      }
+
+      session.requestAnimationFrame(onXRFrame);
+    }
+
+    session.requestAnimationFrame(onXRFrame);
   });
 
-  // Limpiar al salir de AR
-  document.querySelector('a-scene').addEventListener('exit-vr', () => {
+  scene.addEventListener('exit-vr', () => {
     if (modoAR) {
       salirModoAR();
     }
   });
 
-  // Función para detectar superficies continuamente
-  function iniciarDeteccionSuperficies(scene) {
-    const renderer = scene.renderer;
-    
-    function detectar() {
-      if (!scene.is('ar-mode')) return;
-      if (!xrHitTestSource) return;
-      if (modeloColocado) return;
-
-      const frame = renderer.xr.getFrame();
-      if (!frame) {
-        requestAnimationFrame(detectar);
-        return;
-      }
-
-      try {
-        const hitTestResults = frame.getHitTestResults(xrHitTestSource);
-
-        if (hitTestResults.length > 0) {
-          const hit = hitTestResults[0];
-          const pose = hit.getPose(refSpace);
-
-          if (pose) {
-            document.getElementById('surfaceIndicator').style.display = 'block';
-            document.getElementById('arStatusText').textContent = '✅ Superficie detectada';
-            document.getElementById('arHelpText').textContent = 'Toca la pantalla para colocar el modelo';
-            
-            // Guardar la pose
-            scene.setAttribute('ar-hit-pose', JSON.stringify(Array.from(pose.transform.matrix)));
-          }
-        } else {
-          document.getElementById('surfaceIndicator').style.display = 'none';
-          document.getElementById('arStatusText').textContent = 'Buscando superficies...';
-          document.getElementById('arHelpText').textContent = 'Apunta tu cámara al suelo y muévela lentamente';
-        }
-      } catch (err) {
-        console.error('Error en detección:', err);
-      }
-
-      requestAnimationFrame(detectar);
-    }
-
-    detectar();
-  }
-
-  // Detectar toque para colocar modelo
+  // ========================================
+  // COLOCACIÓN DEL MODELO EN AR
+  // ========================================
   window.addEventListener('touchend', (e) => {
     if (!modoAR) return;
     if (modeloColocado) return;
     if (e.target.closest('#ui')) return;
+    if (e.target.closest('#arInstructions')) return;
     
-    const scene = document.querySelector('a-scene');
-    const poseData = scene.getAttribute('ar-hit-pose');
-    
-    if (poseData) {
-      try {
-        const poseMatrix = JSON.parse(poseData);
-        colocarModelo(poseMatrix);
-      } catch (err) {
-        console.error('Error al parsear pose:', err);
-      }
+    if (lastHitPose) {
+      colocarModelo(lastHitPose);
     }
   });
 
-  function colocarModelo(matrix) {
+  function colocarModelo(pose) {
     const modelo = document.querySelector('#modelo');
+    const reticle = document.querySelector('#reticle');
     
-    const position = new THREE.Vector3();
-    const quaternion = new THREE.Quaternion();
-    const scale = new THREE.Vector3();
+    // Posicionar el modelo donde está el reticle
+    modelo.setAttribute('position', {
+      x: pose.transform.position.x,
+      y: pose.transform.position.y,
+      z: pose.transform.position.z
+    });
     
-    const mat4 = new THREE.Matrix4();
-    mat4.fromArray(matrix);
-    mat4.decompose(position, quaternion, scale);
-    
-    modelo.setAttribute('position', position);
+    // Hacer visible el modelo
     modelo.setAttribute('visible', true);
     
-    modeloColocado = true;
+    // Ocultar reticle
+    reticle.setAttribute('visible', false);
     
+    modeloColocado = true;
+    reticleVisible = false;
+    
+    // Actualizar UI
     document.getElementById('surfaceIndicator').style.display = 'none';
     document.getElementById('arStatusText').textContent = '✅ Modelo colocado';
     document.getElementById('arHelpText').textContent = 'Mueve tu cámara para verlo desde diferentes ángulos';
     
-    console.log('✅ Modelo colocado en:', position);
+    console.log('✅ Modelo colocado en:', pose.transform.position);
   }
 
-  // Función para reproducir sonido
+  // ========================================
+  // AUDIO DEL PERICO
+  // ========================================
   let audioActual = null;
   let isPlaying = false;
 
@@ -968,7 +1000,6 @@
     }
   }, 100);
 
-  // Click en barra de progreso para saltar (mouse y touch)
   function clickProgress(e) {
     if (!audioActual) return;
     
@@ -979,7 +1010,9 @@
     audioActual.currentTime = percent * audioActual.duration;
   }
 
-  // Soporte táctil para la barra de progreso
+  // ========================================
+  // INICIALIZACIÓN
+  // ========================================
   document.addEventListener('DOMContentLoaded', () => {
     const progressContainer = document.getElementById('progressContainer');
     
