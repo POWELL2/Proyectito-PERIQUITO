@@ -170,10 +170,9 @@
     color: #333;
     padding: 15px;
     border-radius: 8px;
-    max-height: 50vh;
+    max-height: 70vh;
     overflow-y: auto;
     pointer-events: auto;
-    -webkit-overflow-scrolling: touch;
   }
 
   #panel h3 {
@@ -252,22 +251,15 @@
     background: rgba(255,255,255,0.3);
     border-radius: 5px;
     font-size: 14px;
-    line-height: 1.6;
-    max-height: none;
-    overflow-y: visible;
+    line-height: 1.5;
+    max-height: 250px;
+    overflow-y: auto;
   }
 
   #infoContent h4 {
     margin: 0 0 8px 0;
     color: #034732;
     font-size: 15px;
-    font-weight: 600;
-  }
-
-  #infoContent p {
-    margin: 0;
-    color: #333;
-    text-align: justify;
   }
 
   #infoContent::-webkit-scrollbar {
@@ -415,94 +407,57 @@
 
   @media (max-width: 768px) {
     #logosContainer img {
-      height: 40px;
+      height: 50px;
     }
 
     #animalTitle {
-      font-size: 18px;
-      padding: 10px 15px;
-      max-width: calc(100% - 20px);
-      margin-bottom: 15px;
+      font-size: 20px;
+      padding: 12px 15px;
+      max-width: calc(100% - 140px);
     }
 
     .buttons-container {
-      gap: 8px;
+      gap: 10px;
     }
 
     .info-buttons-vertical,
     .action-buttons-vertical {
-      gap: 8px;
+      gap: 10px;
     }
 
     .info-buttons-vertical button,
     .action-buttons-vertical button {
-      width: 50px;
-      height: 50px;
+      width: 55px;
+      height: 55px;
     }
 
     .info-buttons-vertical button img,
     .action-buttons-vertical button img {
-      width: 30px;
-      height: 30px;
+      width: 35px;
+      height: 35px;
     }
 
     .info-buttons-vertical .button-wrapper span,
     .action-buttons-vertical .button-wrapper span {
-      font-size: 10px;
-    }
-
-    #panel {
-      max-height: 60vh;
-      padding: 12px;
-      font-size: 13px;
+      font-size: 11px;
     }
 
     #panel h3 {
       font-size: 16px;
-      margin-bottom: 8px;
     }
 
     #infoContent {
       font-size: 13px;
-      line-height: 1.5;
-      padding: 10px;
-    }
-
-    #infoContent h4 {
-      font-size: 14px;
-      margin-bottom: 6px;
+      max-height: 200px;
     }
 
     #instrucciones {
-      font-size: 9px;
-      margin-top: 8px;
+      font-size: 10px;
     }
 
     .modal-content {
       margin: 20px;
       padding: 20px;
-    }
-
-    /* Asegurar que el panel sea scrolleable en móvil */
-    #panel {
-      touch-action: pan-y;
-      overscroll-behavior: contain;
-    }
-
-    #infoContent {
-      touch-action: pan-y;
-    }
-  }
-
-  /* Estilos adicionales para mejorar la legibilidad en móviles */
-  @media (max-width: 480px) {
-    #panel {
-      max-height: 55vh;
-    }
-
-    #infoContent {
-      font-size: 12px;
-      line-height: 1.4;
     }
   }
 </style>
@@ -539,11 +494,11 @@
     visible="false">
   </a-entity>
 
-  <!-- Modelo del perico - AJUSTADO PARA ESTAR SOBRE LA BASE -->
+  <!-- Modelo del perico -->
   <a-entity
     id="modelo"
     gltf-model="models/periquito.glb"
-    position="0.4 -0.5 0"
+    position="0.4 0 0"
     scale="5 5 5"
     rotation="0 0 0">
   </a-entity>
@@ -655,6 +610,7 @@
   <!-- Panel de información -->
   <div id="panel" style="display: none;">
     <h3 id="titulo"></h3>
+    <p id="descripcion"></p>
     
     <div id="infoContent" style="display: none;"></div>
     
@@ -827,6 +783,7 @@
 
   function mostrarAnimal() {
     document.getElementById('titulo').textContent = animal.nombre;
+   
     
     if (infoActiva) {
       mostrarInfo(infoActiva);
@@ -1128,7 +1085,7 @@
       // Restaurar modelo
       const modelo = document.querySelector('#modelo');
       modelo.setAttribute('scale', '5 5 5');
-      modelo.setAttribute('position', '0.4 -0.5 0');
+      modelo.setAttribute('position', '0 0 0');
       modelo.setAttribute('visible', true);
       
       // Ocultar UI de AR
